@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>🏍 Rider Telemetry Dashboard</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+<!-- Firebase SDKs -->
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+</head>
+
+<body class="bg-gray-900 text-white p-4">
+  <h1 class="text-2xl font-bold text-center mb-4">🏍 Rider Telemetry Dashboard</h1>
+
+  <div class="flex flex-col md:flex-row gap-4">
+    <div id="map" class="h-64 md:h-96 flex-1 rounded-xl shadow-lg"></div>
+
+    <div class="bg-gray-800 p-4 rounded-xl shadow-lg w-full md:w-1/3">
+      <h2 class="text-xl font-semibold mb-2">Live Data</h2>
+      <p>Latitude: <span id="lat">--</span></p>
+      <p>Longitude: <span id="lon">--</span></p>
+      <p>Speed: <span id="speed">--</span> km/h</p>
+      <p>Acceleration: <span id="acc">--</span> m/s²</p>
+      <p>Ride Type: <span id="mode">--</span></p>
+
+      <button id="connect" class="mt-4 bg-green-600 px-3 py-1 rounded-lg hover:bg-green-700 w-full">
+        Connect Arduino
+      </button>
+      <button id="download" class="mt-2 bg-blue-600 px-3 py-1 rounded-lg hover:bg-blue-700 w-full">
+        Download CSV
+      </button>
+    </div>
+  </div>
+
+  <script>
+    // --- Initialize Firebase ---
+    const firebaseConfig = {
+      apiKey: "AIzaSyDn0Dv4D9V5ibvVnsKtKAbZD4n5JruvlSg",
+      authDomain: "skyrocket-eafc8.firebaseapp.com",
+      databaseURL: "https://skyrocket-eafc8-default-rtdb.firebaseio.com",
+      projectId: "skyrocket-eafc8",
+      storageBucket: "skyrocket-eafc8.firebasestorage.app",
+      messagingSenderId: "472438027031",
+      appId: "1:472438027031:web:233c06f2aa139dc540bd52",
+      measurementId: "G-T6JSDRV2P2"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    // --- MAP SETUP ---
+    const map = L.map('map').setView([12.9716, 77.5946], 15);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    const path = L.polyline([], { color: 'lime' }).addTo(map);
+
+    let port, reader;
+    let logData = [];
+
+    // --- CONNECT TO ARDUINO ---
+    async function connectSerial() {
+      try {
+        port = await navigator.serial.requestPort();
+        await port.open({ baudRate: 9600 });
+
+        const decoder = new TextDecoderStream();
+        port.readable.pipeTo(decoder.writable);
+        reader = decoder.readable.getReader();
+
+        alert("✅ Arduino connected! Receiving live data...");
+        readLoop();
+      } catch (err) {
+        alert("❌ Connection failed: " + err.message);
+      }
+    }
+
+    // --- READ LOOP ---
+    async function readLoop() {
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (value) parseData(value.trim());
+        }
+      } catch (err) {
+        console.error("Serial read error:", err);
+      }
+    }
+
+    // --- PARSE SERIAL DATA & SAVE TO FIREBASE ---
+    async function parseData(line) {
+      const parts = line.split(",");
+      if (parts.length >= 4) {
+        const lat = parseFloat(parts[0]);
+        const lon = parseFloat(parts[1]);
+        const acc = parseFloat(parts[2]);
+        const speed = parseFloat(parts[3]);
+        const mode = speed < 2 ? "Walking" : speed < 25 ? "Scooter" : "Motorcycle";
+
+        if (!isNaN(lat) && !isNaN(lon)) {
+          document.getElementById("lat").textContent = lat.toFixed(5);
+          document.getElementById("lon").textContent = lon.toFixed(5);
+          document.getElementById("acc").textContent = acc.toFixed(2);
+          document.getElementById("speed").textContent = speed.toFixed(2);
+          document.getElementById("mode").textContent = mode;
+
+          path.addLatLng([lat, lon]);
+          const entry = {
+            time: new Date().toISOString(),
+            lat,
+            lon,
+            acc,
+            speed,
+            mode
+          };
+          logData.push(entry);
+
+          // Save to Firestore
+          await db.collection("rider_logs").add(entry);
+        } else {
+          console.warn("Invalid GPS data:", line);
+        }
+      }
+    }
+
+    // --- DOWNLOAD CSV ---
+    document.getElementById("download").addEventListener("click", async () => {
+      const snapshot = await db.collection("rider_logs").get();
+      const data = snapshot.docs.map(doc => doc.data());
+
+      if (data.length === 0) {
+        alert("No data found in database yet!");
+        return;
+      }
+
+      const csv =
+        "timestamp,lat,lon,acc,speed,mode\n" +
+        data
+          .map(
+            d =>
+              `${d.time},${d.lat},${d.lon},${d.acc},${d.speed},${d.mode}`
+          )
+          .join("\n");
+
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "rider_data.csv";
+      a.click();
+    });
+
+    document.getElementById("connect").addEventListener("click", connectSerial);
+  </script>
+</body>
+</html>
