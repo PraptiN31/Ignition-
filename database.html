@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Rider Data Log</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<!-- Firebase SDKs -->
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+</head>
+
+<body class="bg-gray-900 text-white p-6">
+  <h1 class="text-2xl font-bold mb-4">📊 Saved Ride Data</h1>
+
+  <table class="min-w-full bg-gray-800 rounded-xl overflow-hidden">
+    <thead>
+      <tr class="bg-gray-700 text-sm text-gray-300">
+        <th class="p-2">Timestamp</th>
+        <th class="p-2">Latitude</th>
+        <th class="p-2">Longitude</th>
+        <th class="p-2">Acceleration</th>
+        <th class="p-2">Speed</th>
+        <th class="p-2">Mode</th>
+      </tr>
+    </thead>
+    <tbody id="dataRows"></tbody>
+  </table>
+
+  <script>
+    const firebaseConfig = {
+      // Same config you used in index.html
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_PROJECT_ID.appspot.com",
+      messagingSenderId: "YOUR_SENDER_ID",
+      appId: "YOUR_APP_ID"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    async function loadData() {
+      const snapshot = await db.collection("rider_logs").get();
+      const data = snapshot.docs.map(doc => doc.data());
+      const tbody = document.getElementById("dataRows");
+
+      data.forEach(d => {
+        const row = document.createElement("tr");
+        row.classList.add("border-b", "border-gray-700");
+        row.innerHTML = `
+          <td class="p-2">${d.time}</td>
+          <td class="p-2">${d.lat.toFixed(5)}</td>
+          <td class="p-2">${d.lon.toFixed(5)}</td>
+          <td class="p-2">${d.acc.toFixed(2)}</td>
+          <td class="p-2">${d.speed.toFixed(2)}</td>
+          <td class="p-2">${d.mode}</td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+    loadData();
+  </script>
+</body>
+</html>
